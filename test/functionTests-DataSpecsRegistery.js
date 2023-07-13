@@ -15,6 +15,7 @@ describe("DataSpecsRegistry - Function Tests", function () {
 	const TRB_QUERY_DATA_ARGS = abiCoder.encode(["string", "string"], ["trb", "usd"])
 	const TRB_QUERY_DATA = abiCoder.encode(["string", "bytes"], ["SpotPrice", TRB_QUERY_DATA_ARGS])
 	const TRB_QUERY_ID = ethers.utils.keccak256(TRB_QUERY_DATA)
+    const REGISTRATION_PRICE_PER_YEAR = h.toWei("100")
     const reservedQueryStrings = [
         "AmpleforthCustomSpotPrice",
         "AmpleforthUSPCE",
@@ -22,9 +23,15 @@ describe("DataSpecsRegistry - Function Tests", function () {
         "ChatGPTResponse",
         "ComboQuery",
         "CrossChainBalance",
+        "Custom1",
+        "Custom2",
+        "Custom3",
+        "CustomPrice",
         "DIVAProtocol",
         "DailyVolatility",
         "EVMCall",
+        "EVMHeader",
+        "EVMHeaderslist",
         "ExampleFantasyFootball",
         "ExampleNftCollectionStats",
         "FilecoinDealStatus",
@@ -33,6 +40,8 @@ describe("DataSpecsRegistry - Function Tests", function () {
         "LegacyRequest",
         "LendingPairToxicity",
         "MimicryCollectionStat",
+        "MimicryMacroMarketMashup",
+        "MimicryNFTMarketIndex",
         "Morphware",
         "NumericApiResponse",
         "Snapshot",
@@ -43,75 +52,75 @@ describe("DataSpecsRegistry - Function Tests", function () {
         "TellorRNG",
         "TracerFinance",
         "TwitterContestV1"
-    ]
+    ];
 
 	beforeEach(async function () {
-		accounts = await ethers.getSigners();
-		owner = accounts[0]
-		const MockTellorMaster = await ethers.getContractFactory("MockTellorMaster");
-		master = await MockTellorMaster.deploy();
-		await master.deployed();
-		const TellorPlayground = await ethers.getContractFactory("TellorPlayground");
-		tellor = await TellorPlayground.deploy();
+        accounts = await ethers.getSigners();
+        owner = accounts[0]
+        const MockTellorMaster = await ethers.getContractFactory("MockTellorMaster");
+        master = await MockTellorMaster.deploy();
+        await master.deployed();
+        const TellorPlayground = await ethers.getContractFactory("TellorPlayground");
+        tellor = await TellorPlayground.deploy();
         await tellor.deployed();
         const DataSpecsRegistry = await ethers.getContractFactory("DataSpecsRegistry");
-        registry = await DataSpecsRegistry.deploy(master.address, tellor.address, owner.address, owner.address);
+        registry = await DataSpecsRegistry.deploy(master.address, tellor.address, owner.address, owner.address, REGISTRATION_PRICE_PER_YEAR);
         await registry.deployed();
 	});
 
-	it("constructor", async function () {
-		assert(await registry.token() == master.address, "token address is not correct")
+    it("constructor", async function () {
+        assert(await registry.token() == master.address, "token address is not correct")
         feeRecipientRetrieved = await registry.feeRecipient()
         assert(feeRecipientRetrieved == owner.address, "fee recipient is not correct")
-        for(i=0; i<reservedQueryStrings.length; i++) {
+        for (i = 0; i < reservedQueryStrings.length; i++) {
             registration = await registry.getRegistration(reservedQueryStrings[i])
-            assert(registration.admin == owner.address, "admin is not correct")
+            assert(registration.owner == owner.address, "owner is not correct")
             assert(registration.manager == owner.address, "manager is not correct")
             assert(BigInt(registration.expirationTime) == BigInt(ethers.constants.MaxUint256), "expiration time is not correct")
             assert(registration.registered == true, "registered is not correct")
         }
         allRegisteredQueryTypesRetrieved = await registry.getAllRegisteredQueryTypes()
         assert(allRegisteredQueryTypesRetrieved.length == reservedQueryStrings.length, "all registered query types is not correct")
-        for(i=0; i<reservedQueryStrings.length; i++) {
+        for (i = 0; i < reservedQueryStrings.length; i++) {
             assert(allRegisteredQueryTypesRetrieved[i] == reservedQueryStrings[i], "all registered query types is not correct")
         }
-	});
+    });
 
     it("register", async function () {
         // setup queryTypeA registration - basic
         queryTypeA = "queryTypeA"
         await tellor.submitValue(TRB_QUERY_ID, h.uintTob32(h.toWei("5")), 0, TRB_QUERY_DATA)
-        await h.advanceTime(86400/2)
-        await master.faucet(accounts[2].address)
-        await master.connect(accounts[2]).approve(registry.address, h.toWei("1"))
+        await h.advanceTime(86400 / 2)
+        await master.faucet(accounts[2].address) 
+        await master.connect(accounts[2]).approve(registry.address, h.toWei("20"))
         assert(await master.balanceOf(accounts[2].address) == h.toWei("1000"), "registrant balance is not correct")
         assert(await master.balanceOf(accounts[0].address) == 0, "fee recipient balance is not correct")
-        await registry.connect(accounts[2]).register(queryTypeA, h.toWei("1"))
+        await registry.connect(accounts[2]).register(queryTypeA, h.toWei("20"))
         blocky = await h.getBlock()
         // check queryTypeA registration
-        assert(await master.balanceOf(accounts[2].address) == h.toWei("999"), "registrant balance is not correct")
-        assert(await master.balanceOf(accounts[0].address) == h.toWei("1"), "fee recipient balance is not correct")
+        assert(await master.balanceOf(accounts[2].address) == h.toWei("980"), "registrant balance is not correct")
+        assert(await master.balanceOf(accounts[0].address) == h.toWei("20"), "fee recipient balance is not correct")
         registration = await registry.getRegistration(queryTypeA)
-        assert(registration.admin == accounts[2].address, "admin is not correct")
+        assert(registration.owner == accounts[2].address, "owner is not correct")
         assert(registration.manager == accounts[2].address, "manager is not correct")
         assert(BigInt(registration.expirationTime) == BigInt(blocky.timestamp) + BigInt(31536000), "expiration time is not correct")
         assert(registration.registered == true, "registered is not correct")
         queryTypeAIndex = reservedQueryStrings.length
         assert(await registry.getRegisteredQueryTypeByIndex(queryTypeAIndex) == queryTypeA, "registered query type by index is not correct")
-        
+
         // setup queryTypeB registration - infinite time registration
         queryTypeB = "queryTypeB"
         await master.faucet(accounts[3].address)
-        await master.connect(accounts[3]).approve(registry.address, h.toWei("100"))
+        await master.connect(accounts[3]).approve(registry.address, h.toWei("1000"))
         assert(await master.balanceOf(accounts[3].address) == h.toWei("1000"), "registrant balance is not correct")
-        assert(await master.balanceOf(accounts[0].address) == h.toWei("1"), "fee recipient balance is not correct")
-        await registry.connect(accounts[3]).register(queryTypeB, h.toWei("100"))
+        assert(await master.balanceOf(accounts[0].address) == h.toWei("20"), "fee recipient balance is not correct")
+        await registry.connect(accounts[3]).register(queryTypeB, h.toWei("400"))
         blocky2 = await h.getBlock()
         // check queryTypeB registration
-        assert(await master.balanceOf(accounts[3].address) == h.toWei("900"), "registrant balance is not correct")
-        assert(await master.balanceOf(accounts[0].address) == h.toWei("101"), "fee recipient balance is not correct")
+        assert(await master.balanceOf(accounts[3].address) == h.toWei("600"), "registrant balance is not correct")
+        assert(await master.balanceOf(accounts[0].address) == h.toWei("420"), "fee recipient balance is not correct")
         registration = await registry.getRegistration(queryTypeB)
-        assert(registration.admin == accounts[3].address, "admin is not correct")
+        assert(registration.owner == accounts[3].address, "owner is not correct")
         assert(registration.manager == accounts[3].address, "manager is not correct")
         assert(BigInt(registration.expirationTime) == BigInt(ethers.constants.MaxUint256), "expiration time is not correct")
         assert(registration.registered == true, "registered is not correct")
@@ -127,24 +136,252 @@ describe("DataSpecsRegistry - Function Tests", function () {
         // re-register queryTypeA
         await h.advanceTime(31536000)
         await master.faucet(accounts[4].address)
-        await master.connect(accounts[4]).approve(registry.address, h.toWei("1"))
+        await master.connect(accounts[4]).approve(registry.address, h.toWei("20"))
         assert(await master.balanceOf(accounts[4].address) == h.toWei("1000"), "registrant balance is not correct")
-        assert(await master.balanceOf(accounts[0].address) == h.toWei("101"), "fee recipient balance is not correct")
+        assert(await master.balanceOf(accounts[0].address) == h.toWei("420"), "fee recipient balance is not correct")
         registeredQueryTypeCountBefore = await registry.getRegisteredQueryTypeCount()
-        await registry.connect(accounts[4]).register(queryTypeA, h.toWei("1"))
+        await registry.connect(accounts[4]).register(queryTypeA, h.toWei("20"))
         blocky3 = await h.getBlock()
         registeredQueryTypeCountAfter = await registry.getRegisteredQueryTypeCount()
         // check queryTypeA re-registration
         assert(registeredQueryTypeCountBefore - registeredQueryTypeCountAfter == 0, "registered query type count is not correct")
-        assert(await master.balanceOf(accounts[4].address) == h.toWei("999"), "registrant balance is not correct")
-        assert(await master.balanceOf(accounts[0].address) == h.toWei("102"), "fee recipient balance is not correct")
+        assert(await master.balanceOf(accounts[4].address) == h.toWei("980"), "registrant balance is not correct")
+        assert(await master.balanceOf(accounts[0].address) == h.toWei("440"), "fee recipient balance is not correct")
         registration = await registry.getRegistration(queryTypeA)
-        assert(registration.admin == accounts[4].address, "admin is not correct")
+        assert(registration.owner == accounts[4].address, "owner is not correct")
         assert(registration.manager == accounts[4].address, "manager is not correct")
         assert(BigInt(registration.expirationTime) == BigInt(blocky3.timestamp) + BigInt(31536000), "expiration time is not correct")
         assert(registration.registered == true, "registered is not correct")
         assert(await registry.getRegisteredQueryTypeByIndex(queryTypeAIndex) == queryTypeA, "registered query type by index is not correct")
     });
 
-	
+    it("extendRegistration", async function () {
+        queryTypeD = "queryTypeD"
+        // try to call without registering 
+        await h.expectThrow(registry.connect(accounts[5]).extendRegistration(queryTypeD, h.toWei("20")))
+        // setup queryTypeD registration - basic
+        await tellor.submitValue(TRB_QUERY_ID, h.uintTob32(h.toWei("5")), 0, TRB_QUERY_DATA)
+        await h.advanceTime(86400 / 2)
+        await master.faucet(accounts[5].address)
+        await master.connect(accounts[5]).approve(registry.address, h.toWei("20"))
+        assert(await master.balanceOf(accounts[5].address) == h.toWei("1000"), "registrant balance is not correct")
+        assert(await master.balanceOf(accounts[0].address) == 0, "fee recipient balance is not correct")
+        await registry.connect(accounts[5]).register(queryTypeD, h.toWei("20"))
+        originalRegistration = await registry.getRegistration(queryTypeD)
+        originalExpiration = BigInt(originalRegistration.expirationTime)
+        blocky4 = await h.getBlock()
+        // extend queryTypeD registration 1 yr
+        await master.connect(accounts[5]).approve(registry.address, h.toWei("20"))
+        await registry.connect(accounts[5]).extendRegistration(queryTypeD, h.toWei("20"))
+        blocky5 = await h.getBlock()
+        // check queryTypeD registration
+        assert(await master.balanceOf(accounts[5].address) == h.toWei("960"), "registrant balance is not correct")
+        assert(await master.balanceOf(accounts[0].address) == h.toWei("40"), "fee recipient balance is not correct")
+        newRegistration = await registry.getRegistration(queryTypeD)
+        newExpiration = BigInt(newRegistration.expirationTime) 
+        assert(newRegistration.owner == accounts[5].address, "owner is not correct")
+        assert(newRegistration.manager == accounts[5].address, "manager is not correct")
+        //amount * trb price / registration price per yr = num years 
+        assert(newExpiration == (BigInt(31536000) + originalExpiration), "expiration time is not correct")
+        assert(newRegistration.registered == true, "registered is not correct")
+        queryTypeDIndex = reservedQueryStrings.length
+        assert(await registry.getRegisteredQueryTypeByIndex(queryTypeDIndex) == queryTypeD, "registered query type by index is not correct")
+        // extend queryTypeD registration 1/2 of a year 
+        await master.connect(accounts[5]).approve(registry.address, h.toWei("10"))
+        await registry.connect(accounts[5]).extendRegistration(queryTypeD, h.toWei("10"))
+        newRegistration2 = await registry.getRegistration(queryTypeD)
+        newExpiration2 = BigInt(newRegistration2.expirationTime)
+        assert(newExpiration2 == (BigInt(31536000/2) + newExpiration), "expiration time is not correct")
+        // extend queryTypeD registration for infinity
+        await master.connect(accounts[5]).approve(registry.address, h.toWei("400"))
+        await registry.connect(accounts[5]).extendRegistration(queryTypeD, h.toWei("400"))
+        infiniteRegistration = await registry.getRegistration(queryTypeD)
+        infiniteExpiration = BigInt(infiniteRegistration.expirationTime)
+        assert((infiniteExpiration) == BigInt(ethers.constants.MaxUint256), "expiration time is not correct")
+
+        // require statements
+        // test fee requirement ?
+        await master.connect(accounts[5]).approve(registry.address, h.toWei("0"))
+        await h.expectThrow(registry.connect(accounts[5]).extendRegistration(queryTypeD, h.toWei("1")))
+    })
+
+    it("setDocumentHash", async function () {
+        let DOC_HASH_1 = "bafyabcd1"
+        let DOC_HASH_2 = "bafyabcd2"
+        // setup queryTypeE registration 1 yr
+        queryTypeE = "queryTypeE"
+        await tellor.submitValue(TRB_QUERY_ID, h.uintTob32(h.toWei("5")), 0, TRB_QUERY_DATA)
+        await h.advanceTime(86400 / 2)
+        await master.faucet(accounts[6].address)
+        await master.connect(accounts[6]).approve(registry.address, h.toWei("20"))
+        await registry.connect(accounts[6]).register(queryTypeE, h.toWei("20"))
+        // try to set doc hash from wrong account
+        await h.expectThrow(registry.connect(accounts[1]).setDocumentHash(queryTypeE, DOC_HASH_1))
+        // set doc hash 
+        await registry.connect(accounts[6]).setDocumentHash(queryTypeE, DOC_HASH_1)
+        registration = await registry.getRegistration(queryTypeE)
+        assert(registration.documentHash === DOC_HASH_1, "document hash is not correct")
+        // try to change hash after expiring
+        await h.advanceTime(31536001)
+        blocky6 = await h.getBlock()
+        registration2 = await registry.getRegistration(queryTypeE)
+        assert(registration2.expirationTime < blocky6.timestamp)
+        await h.expectThrow(registry.connect(accounts[6]).setDocumentHash(queryTypeE, DOC_HASH_2))
+
+    })
+
+    it("setManagerAddress", async function () {
+        // setup queryTypeF registration 1 yr
+        queryTypeF = "queryTypeF"
+        await tellor.submitValue(TRB_QUERY_ID, h.uintTob32(h.toWei("5")), 0, TRB_QUERY_DATA)
+        await h.advanceTime(86400 / 2)
+        await master.faucet(accounts[7].address)
+        await master.connect(accounts[7]).approve(registry.address, h.toWei("20"))
+        await registry.connect(accounts[7]).register(queryTypeF, h.toWei("20"))
+        registration = await registry.getRegistration(queryTypeF)
+        assert(registration.manager == accounts[7].address, "manager is not correct")
+        // try to set manager address from wrong account
+        await h.expectThrow(registry.connect(accounts[1]).setManagerAddress(queryTypeF, accounts[1].address))
+        // set manager address
+        await registry.connect(accounts[7]).setManagerAddress(queryTypeF, accounts[2].address)
+        registration2 = await registry.getRegistration(queryTypeF)
+        assert(registration2.manager === accounts[2].address, "new manager is not correct")
+        // try to change manager after expiring
+        await h.advanceTime(31536001)
+        blocky7 = await h.getBlock()
+        registration3 = await registry.getRegistration(queryTypeF)
+        assert(registration3.expirationTime < blocky7.timestamp)
+        await h.expectThrow(registry.connect(accounts[2]).setManagerAddress(queryTypeF, accounts[1].address))
+
+    })
+
+    it("setOwnerAddress", async function () {
+        // setup queryTypeG registration 1 yr
+        queryTypeG = "queryTypeG"
+        await tellor.submitValue(TRB_QUERY_ID, h.uintTob32(h.toWei("5")), 0, TRB_QUERY_DATA)
+        await h.advanceTime(86400 / 2)
+        await master.faucet(accounts[8].address)
+        await master.connect(accounts[8]).approve(registry.address, h.toWei("20"))
+        await registry.connect(accounts[8]).register(queryTypeG, h.toWei("20"))
+        registration = await registry.getRegistration(queryTypeG)
+        assert(registration.owner == accounts[8].address, "owner is not correct") 
+        // try to set owner address from wrong account
+        await h.expectThrow(registry.connect(accounts[1]).setOwnerAddress(queryTypeG, accounts[1].address))
+        // set owner address
+        await registry.connect(accounts[8]).setOwnerAddress(queryTypeG, accounts[2].address)
+        registration2 = await registry.getRegistration(queryTypeG)
+        assert(registration2.owner === accounts[2].address, "new owner is not correct")
+        // try to change owner after expiring
+        await h.advanceTime(31536001)
+        blocky8 = await h.getBlock()
+        registration3 = await registry.getRegistration(queryTypeG)
+        assert(registration3.expirationTime < blocky8.timestamp)
+        await h.expectThrow(registry.connect(accounts[2]).setManagerAddress(queryTypeF, accounts[1].address))
+
+    })
+
+    it("updateTellorAddress", async function () {
+        // get new oracle address to switch to
+        const TellorPlayground = await ethers.getContractFactory("TellorPlayground");
+        tellor2 = await TellorPlayground.deploy()
+        // update oracle address on tellor master
+        await master.mockUpdateOracleAddress(tellor2.address)
+        // tell registry to read new oracle address 
+        await registry.updateTellorAddress()
+        assert.equal(await registry.tellor(), tellor2.address)
+
+        // make sure registry can read from new oracle address
+
+    })
+
+    it("getAllRegisteredQueryTypes", async function () {
+        list = await registry.getAllRegisteredQueryTypes()
+        assert.equal(list.length, reservedQueryStrings.length)
+        // register new type
+        await tellor.submitValue(TRB_QUERY_ID, h.uintTob32(h.toWei("5")), 0, TRB_QUERY_DATA)
+        await h.advanceTime(86400 / 2)
+        queryTypeH = "queryTypeH"
+        await master.faucet(accounts[9].address)
+        await master.connect(accounts[9]).approve(registry.address, h.toWei("20"))
+        await registry.connect(accounts[9]).register(queryTypeH, h.toWei("20"))
+        list2 = await registry.getAllRegisteredQueryTypes()
+        assert(list2.length === (list.length + 1))
+        // let H expire
+        await h.advanceTime(31536001)
+        blocky9 = await h.getBlock()
+        registration = await registry.getRegistration(queryTypeH)
+        assert(registration.expirationTime < blocky9.timestamp)
+        // make sure H still shows up 
+        list3 = await registry.getAllRegisteredQueryTypes()
+        assert.equal(list3.length, list2.length)
+
+    })
+
+    it("getCostPerYearInTRB", async function () {
+        // use default lastSavedTRBPrice
+        expected = (100) / 15
+        cost = await (registry.getCostPerYearInTRB()) / 1e18
+        assert.equal(cost, expected)
+        // change TRB value
+        expected2 = (100) / 50
+        await tellor.submitValue(TRB_QUERY_ID, h.uintTob32(h.toWei("50")), 0, TRB_QUERY_DATA)
+        await h.advanceTime(86402 / 2)
+        cost2 = await (registry.getCostPerYearInTRB()) / 1e18
+        assert.equal(cost2, expected2)
+        // try and get value less than 12 hrs old
+        expected2 = (100) / 50
+        await tellor.submitValue(TRB_QUERY_ID, h.uintTob32(h.toWei("100")), 0, TRB_QUERY_DATA)
+        await h.advanceTime(86398 / 2)
+        cost2 = await (registry.getCostPerYearInTRB()) / 1e18
+        assert.equal(cost2, expected2)        
+        // fast forward a yr and check again 
+        await h.advanceTime(31536000)
+        expected3 = (100) / 100
+        cost3 = await (registry.getCostPerYearInTRB()) / 1e18
+        assert.equal(cost3, expected3)
+
+    })
+
+    it("getRegisteredQueryTypeByIndex", async function () {
+        console.log(reservedQueryStrings.length)
+        console.log(reservedQueryStrings)
+        // retrieve first index
+        assert.equal(await registry.getRegisteredQueryTypeByIndex(0), reservedQueryStrings[0])
+        // try to retreive bad index
+        await h.expectThrow(registry.getRegisteredQueryTypeByIndex(100))
+        // add a queryTypeI and retreive it by index
+        queryTypeI = "queryTypeI"
+        await tellor.submitValue(TRB_QUERY_ID, h.uintTob32(h.toWei("5")), 0, TRB_QUERY_DATA)
+        await h.advanceTime(86400 / 2)
+        await master.faucet(accounts[10].address)
+        await master.connect(accounts[10]).approve(registry.address, h.toWei("20"))
+        await registry.connect(accounts[10]).register(queryTypeI, h.toWei("20"))
+        queryTypeIIndex = reservedQueryStrings.length
+        console.log(queryTypeIIndex)
+        console.log(reservedQueryStrings)
+        assert(await registry.getRegisteredQueryTypeByIndex(queryTypeIIndex) == queryTypeI, "registered query type by index is not correct")
+
+
+    })
+
+    it("getRegisteredQueryTypeCount", async function () {
+
+    })
+
+    it("getRegistration", async function () {
+
+
+    })
+
+    it("getAmountInUSD", async function () {
+        await tellor.submitValue(TRB_QUERY_ID, h.uintTob32(h.toWei("5")), 0, TRB_QUERY_DATA)
+        await h.advanceTime(86400 / 2)
+
+       //amount = await registry._getAmountInUSD(100)
+        //assert.equal(amount, 500)
+
+
+    })
+
+
 });
